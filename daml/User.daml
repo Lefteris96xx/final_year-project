@@ -1,0 +1,88 @@
+module User where
+
+import Token
+import Payment
+
+
+template User with
+    username: Party
+    following: [Party]
+    tokens: [ContractId Token]
+  where
+    signatory username
+    observer following
+    key username: Party
+    maintainer key
+
+    nonconsuming choice Follow: ContractId User with
+        userToFollow: Party
+      controller username
+      do
+        assertMsg "You cannot follow yourself" (userToFollow /= username)
+        assertMsg "You cannot follow the same user twice" (notElem userToFollow following)
+        archive self
+        create this with following = userToFollow :: following
+
+    nonconsuming choice BuyToken: ContractId User with
+      alias: Party
+      tokenCid: ContractId Token
+      paymentReference: Text
+      paymentAmount: Decimal
+     controller username
+     do
+      (aliasCid, Alias {alias = aliasName, aliasTokens = aliasTokens}) <- fetchByKey @Alias (alias, username)
+      assertMsg "The token does not exist" (elem tokenCid aliasTokens)
+      paymentCid <- create Payable with amount = paymentAmount; currency = "Ether"; from = username; to = alias; reference = paymentReference
+      token <- fetch tokenCid
+      assertMsg "The owner of the token is not the alias" (Token.owner token == alias)
+      newTokenCid <- exercise tokenCid Purchase with buyer = username, paymentCid = paymentCid
+      archive self
+      userCid <- create this with tokens = newTokenCid :: tokens
+      return userCid
+
+
+    nonconsuming choice UpdateUserTokens : ContractId User
+      with
+        newToken : ContractId Token
+       controller username
+       do
+        userCid <- create this with tokens = newToken :: tokens
+        archive self
+        return userCid
+
+
+    nonconsuming choice UploadToken: ContractId User with
+      tokenData: TokenData
+     controller username
+     do
+    let issuer = username
+    let userAdmin = username
+    let newTokenData = tokenData with issuer = issuer; userAdmin = userAdmin
+    tokenCid <- create Token with tokenData = newTokenData; owner = username; potentialBuyer = username -- add potentialBuyer field
+    archive self
+    create this with tokens = tokenCid :: tokens
+
+ 
+
+-- ALIAS_BEGIN
+template Alias with
+    username: Party
+    alias: Text
+    public: Party
+    aliasTokens: [ContractId Token]
+  where
+    signatory username
+    observer public
+
+    key (username, public) : (Party, Party)
+    maintainer key._1
+
+
+
+template Message with
+    sender: Party
+    receiver: Party
+    content: Text
+  where
+    signatory sender, receiver
+

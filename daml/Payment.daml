@@ -1,0 +1,69 @@
+module Payment where
+
+template Payable
+  with
+    amount: Decimal
+    currency: Text 
+    from: Party
+    to: Party
+    reference: Text
+  where
+    signatory from
+    observer to
+
+    choice ClaimPaid: ContractId PaymentClaim
+      with
+        transactionId: Text
+      controller from
+      do
+        create PaymentClaim with
+          amount = amount
+          currency = currency
+          from = from
+          to = to
+          reference = reference
+          transactionId = transactionId
+
+template PaymentClaim
+  with
+    amount: Decimal
+    currency: Text
+    from: Party
+    to: Party
+    reference: Text
+    transactionId: Text
+  where
+    signatory from
+
+    choice Receive: ContractId Receipt
+      controller to
+      do
+        received <- getTime
+        create Receipt
+          with
+            amount = amount
+            currency = currency
+            from = from
+            to = to
+            reference = reference
+            transactionId = transactionId
+            received = received
+
+template Receipt
+  with
+    amount: Decimal
+    currency: Text
+    from: Party
+    to: Party
+    reference: Text
+    transactionId: Text
+    received: Time
+  where
+    signatory to, from
+
+    nonconsuming choice Dismiss: ()
+      controller from
+      do return ()
+
+
+-- this code is taken from the daml training tutorial

@@ -1,0 +1,77 @@
+module Token where
+
+import Payment
+
+
+type TokenId = Text
+type Thumbnail = Text 
+
+data TokenData = TokenData with
+  tokenId : TokenId
+  amount: Int
+  issuer : Party
+  userAdmin : Party
+  description : Text
+  lastPrice : Decimal
+  currency : Text
+  thumbnail : Thumbnail
+  issued : Time
+   deriving (Eq, Show)
+
+
+template Token
+  with
+    tokenData : TokenData
+    owner : Party
+    potentialBuyer: Party
+  where
+    signatory tokenData.issuer, tokenData.userAdmin
+    observer [owner, potentialBuyer]
+
+    key (tokenData.issuer, owner, tokenData.tokenId) : (Party, Party, TokenId)
+    maintainer key._1
+
+
+    choice Offer: ContractId TokenOffer
+      with
+        newOwner: Party
+        price: Decimal
+      controller owner
+      do
+        (tokenId, _) <- fetchByKey @Token (tokenData.issuer, owner, tokenData.tokenId)
+ 
+        create TokenOffer with
+          tokenId
+          newOwner
+          price
+
+
+    choice Transfer: ContractId Token
+      with
+        newOwner: Party
+      controller owner
+      do
+        assertMsg "You cannot transfer a token to yourself" (newOwner /= owner)
+        create this with owner = newOwner, potentialBuyer = newOwner
+
+    choice Purchase: ContractId Token
+      with
+        buyer: Party
+        paymentCid: ContractId Payable
+      controller buyer
+      do
+        payment <- fetch paymentCid
+        assertMsg "The payment is not enough" (payment.amount >= tokenData.lastPrice)
+        assertMsg "You are not the potential buyer of this token" (buyer == potentialBuyer)
+        create this with owner = buyer, potentialBuyer = buyer
+
+
+template TokenOffer
+  with
+    tokenId : ContractId Token
+    newOwner : Party
+    price : Decimal
+  where
+    signatory newOwner
+
+   
